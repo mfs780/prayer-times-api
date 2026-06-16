@@ -1,6 +1,8 @@
+import './globals.css';
+
 export const metadata = {
-  title: 'prayer-times-api',
-  description: 'Standalone prayer-times API service',
+  title: 'Prayer Times API',
+  description: 'Multi-tenant prayer times + iqama API. Default tenant: ICCF.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
