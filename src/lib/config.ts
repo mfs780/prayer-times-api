@@ -15,6 +15,27 @@ export interface MasjidConfig {
   iqamaRules: MasjidIqamaRules;
 }
 
+// Backward-compat default tenant — callers who hit the service with no `config`
+// param get ICCF data back. Other masjids must send their own config.
+export const DEFAULT_MASJID_CONFIG: MasjidConfig = {
+  slug: 'iccf',
+  name: 'Islamic Foundation of Clovis and Fresno (ICCF)',
+  address: '2111 E Nees Ave, Fresno, CA 93720',
+  timezone: 'America/Los_Angeles',
+  calcMethodId: 2,
+  calcMethodLabel: 'ISNA',
+  iqamaRules: {
+    Fajr:    { defaultRules: { type: 'interval', interval: 15, gapTime: 10, lowerLimit: '04:45' } },
+    Dhuhr:   { defaultRules: { type: 'dst', gapTime: 15, afterDST: '13:30', beforeDST: '12:30' } },
+    Asr:     { defaultRules: { type: 'interval', interval: 15, gapTime: 10, upperLimit: '17:00' } },
+    Maghrib: { defaultRules: { type: 'delay', delay: 10 } },
+    Isha:    {
+      defaultRules: { type: 'interval', interval: 15, gapTime: 10, upperLimit: '22:00', lowerLimit: '20:00' },
+      ramadanRules: { type: 'dst', gapTime: 10, afterDST: '20:30', beforeDST: '20:00' },
+    },
+  },
+};
+
 export interface PrayerTimesParams {
   scope: 'day' | 'month' | 'ramadan' | 'year';
   date?: string;
@@ -201,19 +222,13 @@ export async function parseMasjidRequest(request: Request): Promise<ParsedReques
       throw new ConfigError('body', 'expected JSON object with { config, params }');
     }
     const b = body as Record<string, unknown>;
-    if (b.config === undefined) {
-      throw new ConfigError('config', 'missing config in request body');
-    }
-    const config = validateMasjidConfig(b.config);
+    const config = b.config === undefined ? DEFAULT_MASJID_CONFIG : validateMasjidConfig(b.config);
     const params = paramsFromObject(b.params);
     return { config, params };
   }
 
   const configRaw = url.searchParams.get('config');
-  if (!configRaw) {
-    throw new ConfigError('config', 'missing required `config` query parameter (URL-encoded JSON)');
-  }
-  const config = parseConfigJSON(configRaw);
+  const config = configRaw === null ? DEFAULT_MASJID_CONFIG : parseConfigJSON(configRaw);
   const params = paramsFromSearch(url.searchParams);
   return { config, params };
 }

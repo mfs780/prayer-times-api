@@ -7,6 +7,11 @@ the masjid (address, name, timezone, calculation method, iqama rules). The
 service has no per-tenant state — any site can call it by sending its own
 config.
 
+**Default tenant**: a request with no `config` param returns ICCF (Islamic
+Foundation of Clovis and Fresno) data. Naive callers get something useful out
+of the box; other masjids must send their own config explicitly. The default
+lives in `src/lib/config.ts` as `DEFAULT_MASJID_CONFIG`.
+
 ## Endpoints
 
 All under `/api/v1`. Both `GET` (with `?config=<url-encoded JSON>`) and `POST`
