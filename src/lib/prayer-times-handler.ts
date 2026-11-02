@@ -1,5 +1,6 @@
 import {
   getPrayerTimesAPI,
+  normalizeAladhanTime,
   getPrayerTimesForYearAPI,
   calculateIqamaTime,
   formatTo12Hour,
@@ -675,9 +676,9 @@ async function getSingleDayPrayerTimes(date: AladhanDateString, masjid: MasjidCo
     const data = await response.json();
 
     if (data && data.data) {
-      // Clean up times by removing timezone suffixes
+      // Strip timezone suffixes, correcting DST-transition-day offsets
       Object.keys(data.data.timings).forEach((key) => {
-        data.data.timings[key] = data.data.timings[key].replace(/\s*\([A-Z]{3}\)/, '');
+        data.data.timings[key] = normalizeAladhanTime(data.data.timings[key], date, data.data.meta?.timezone);
       });
       return data.data;
     }

@@ -133,6 +133,72 @@ function shiftAladhanDate(date: AladhanDateString, offsetDays: number): AladhanD
   return dateToAladhan(shiftedDate);
 }
 
+function getUtcOffsetMinutes(timeZone: string, instant: number): number | null {
+  const offsetName = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'longOffset' })
+    .formatToParts(instant)
+    .find((part) => part.type === 'timeZoneName')?.value;
+  if (offsetName === 'GMT') return 0;
+  const match = offsetName?.match(/^GMT([+-])(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const minutes = parseInt(match[2], 10) * 60 + parseInt(match[3], 10);
+  return match[1] === '-' ? -minutes : minutes;
+}
+
+function getZoneAbbreviation(timeZone: string, instant: number, locale: string): string | undefined {
+  return new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: 'short' })
+    .formatToParts(instant)
+    .find((part) => part.type === 'timeZoneName')?.value;
+}
+
+/**
+ * Aladhan's calendar range endpoint computes a DST-transition day with the
+ * offset in force at the start of that day. On the November fall-back day
+ * every time comes back as e.g. "06:10 (PDT)" when the correct local time is
+ * 05:10 PST. The abbreviation is honest about which offset was used (the
+ * iso8601 output is not), so convert each time from the offset its
+ * abbreviation names into the zone's actual offset at that moment.
+ * Times with an abbreviation we can't map are returned unchanged.
+ */
+export function normalizeAladhanTime(
+  rawTime: string,
+  date: AladhanDateString,
+  timeZone?: string,
+): string {
+  const match = rawTime.match(/^\s*(\d{1,2}):(\d{2})\s*(?:\(([^)]+)\))?\s*$/);
+  if (!match) return rawTime.replace(/\s*\([^)]*\)/, '');
+
+  const hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const time = `${String(hours).padStart(2, '0')}:${match[2]}`;
+  const abbreviation = match[3];
+  if (!abbreviation || !timeZone) return time;
+
+  try {
+    const [day, month, year] = date.split('-').map(Number);
+    const noon = Date.UTC(year, month - 1, day, 12);
+    const abbreviationOffsets = new Map<string, number>();
+    for (const instant of [noon - 86400000, noon, noon + 86400000]) {
+      const offset = getUtcOffsetMinutes(timeZone, instant);
+      if (offset === null) continue;
+      for (const locale of ['en-US', 'en-GB']) {
+        const name = getZoneAbbreviation(timeZone, instant, locale);
+        if (name) abbreviationOffsets.set(name, offset);
+      }
+    }
+
+    const labelledOffset = abbreviationOffsets.get(abbreviation);
+    if (labelledOffset === undefined) return time;
+
+    const instant = Date.UTC(year, month - 1, day, hours, minutes) - labelledOffset * 60000;
+    const actualOffset = getUtcOffsetMinutes(timeZone, instant);
+    if (actualOffset === null || actualOffset === labelledOffset) return time;
+
+    return addMinutes(time, actualOffset - labelledOffset);
+  } catch {
+    return time;
+  }
+}
+
 function filterEntriesToRequestedRange(
   entries: DailyEntry[],
   start: AladhanDateString,
@@ -286,10 +352,15 @@ export function getPrayerTimesAPI(
       console.log(`[getPrayerTimesAPI] Response code: ${data.code}, status: ${data.status}`);
 
       if (data && data.data) {
-        // Clean up times by removing timezone suffixes like "(PDT)" or "(PST)"
+        // Strip timezone suffixes like "(PDT)", correcting DST-transition days
+        // where Aladhan labels the day with the wrong offset
         data.data.forEach((entry) => {
           Object.keys(entry.timings).forEach((key) => {
-            entry.timings[key] = entry.timings[key].replace(/\s*\([A-Z]{3}\)/, '');
+            entry.timings[key] = normalizeAladhanTime(
+              entry.timings[key],
+              entry.date.gregorian.date,
+              entry.meta?.timezone,
+            );
           });
         });
 

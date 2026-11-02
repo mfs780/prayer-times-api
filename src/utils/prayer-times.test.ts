@@ -14,6 +14,7 @@ import {
   getIntervalDates,
   getPrayerTimesAPI,
   getPrayerTimesForYearAPI,
+  normalizeAladhanTime,
   type DailyEntry,
   type HijriDate
 } from '@/utils/prayer-times';
@@ -198,6 +199,42 @@ describe('Prayer Times Utilities', () => {
       expect(result?.data[0].date.gregorian.date).toBe('01-04-2026');
       expect(result?.data[result.data.length - 1].date.gregorian.date).toBe('30-04-2026');
       expect(result?.data.some((entry) => entry.date.gregorian.date === '31-03-2026')).toBe(false);
+    });
+  });
+
+  describe('normalizeAladhanTime', () => {
+    const LA = 'America/Los_Angeles';
+
+    test('converts the fall-back day from the PDT Aladhan used to PST', () => {
+      // Aladhan's range endpoint returns Nov 1 2026 as "06:10 (PDT)"; the
+      // correct Fresno local time is 05:10 PST
+      expect(normalizeAladhanTime('06:10 (PDT)', '01-11-2026', LA)).toBe('05:10');
+      expect(normalizeAladhanTime('12:43 (PDT)', '01-11-2026', LA)).toBe('11:43');
+      expect(normalizeAladhanTime('18:02 (PDT)', '01-11-2026', LA)).toBe('17:02');
+    });
+
+    test('converts a spring-forward day mislabelled PST to PDT', () => {
+      expect(normalizeAladhanTime('05:09 (PST)', '08-03-2026', LA)).toBe('06:09');
+      expect(normalizeAladhanTime('18:00 (PST)', '08-03-2026', LA)).toBe('19:00');
+    });
+
+    test('leaves correctly labelled times alone', () => {
+      expect(normalizeAladhanTime('06:09 (PDT)', '08-03-2026', LA)).toBe('06:09');
+      expect(normalizeAladhanTime('18:03 (PDT)', '31-10-2026', LA)).toBe('18:03');
+      expect(normalizeAladhanTime('05:11 (PST)', '02-11-2026', LA)).toBe('05:11');
+      expect(normalizeAladhanTime('17:02 (PST)', '01-11-2026', LA)).toBe('17:02');
+    });
+
+    test('works for zones with non-US abbreviations', () => {
+      // UK clocks went back on Oct 25 2026
+      expect(normalizeAladhanTime('18:30 (BST)', '25-10-2026', 'Europe/London')).toBe('17:30');
+      expect(normalizeAladhanTime('17:30 (GMT)', '25-10-2026', 'Europe/London')).toBe('17:30');
+    });
+
+    test('strips the suffix unchanged when the offset cannot be resolved', () => {
+      expect(normalizeAladhanTime('05:00 (PDT)', '01-11-2026')).toBe('05:00');
+      expect(normalizeAladhanTime('05:00 (+03)', '01-11-2026', 'Asia/Riyadh')).toBe('05:00');
+      expect(normalizeAladhanTime('05:00', '01-11-2026', LA)).toBe('05:00');
     });
   });
 
